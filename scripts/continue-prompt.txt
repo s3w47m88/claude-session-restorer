@@ -1,0 +1,1 @@
+State the Client, Project, Mission, Goals to complete the mission, tasks parents and children to complete the missions and their status' in a table. Then, continue where you left off. Only stop for HITL if you are blocked from other items.

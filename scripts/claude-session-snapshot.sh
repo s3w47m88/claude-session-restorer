@@ -34,3 +34,14 @@ if [ -s "$TMP" ]; then
 else
   rm -f "$TMP"
 fi
+
+# Also capture per-project window geometry (position/size/Space) while iTerm is up.
+# Best-effort, time-boxed, never blocks the snapshot.
+VENV_PY="$HOME/.claude/scripts/itermvenv/bin/python"
+GEO_PY="$HOME/.claude/scripts/claude-geometry-snapshot.py"
+if pgrep -xq iTerm2 2>/dev/null && [ -x "$VENV_PY" ] && [ -f "$GEO_PY" ]; then
+  "$VENV_PY" "$GEO_PY" >/dev/null 2>&1 &
+  gpid=$!
+  ( sleep 25; kill "$gpid" 2>/dev/null ) >/dev/null 2>&1 &
+  wait "$gpid" 2>/dev/null
+fi

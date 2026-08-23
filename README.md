@@ -1,6 +1,6 @@
-# Claude Session Restorer
+# Restore AI Windows
 
-Reopen your [Claude Code](https://claude.com/claude-code) sessions after a crash, restart, or reboot — as named iTerm2 windows (or tabs) each running `claude --resume`. If your Mac goes down with a dozen sessions open, you get them all back.
+Reopen your [Claude Code](https://claude.com/claude-code) sessions after a crash, restart, or reboot — as iTerm2 windows **grouped by project** (one tab per session), each running `claude --resume`, put back at their **saved position, size, and virtual desktop**. The trust and "resume from summary" prompts are auto-answered, and each session is handed a prompt so it summarizes and **continues where it left off**.
 
 ![icon](assets/icon.png)
 
@@ -8,12 +8,17 @@ Reopen your [Claude Code](https://claude.com/claude-code) sessions after a crash
 
 | Piece | What it does |
 | --- | --- |
-| **Dock app** | Click it → checklist of your recent sessions → choose **separate windows** or **tabs** → each reopens in its project directory |
-| **Auto-restore** | A launchd agent reopens your last active session set automatically at every login |
-| **Snapshot** | A launchd agent records which sessions are active every 2 minutes (this is what auto-restore reads) |
+| **Dock app** | Click **Restore AI Windows** → reopens your last active session set |
+| **Auto-restore** | A launchd agent restores automatically at every login |
+| **Snapshot** | A launchd agent records active sessions **and window geometry** every 2 min |
 | **Claude Code skill** | Say *"restore my sessions"* inside Claude Code to run it hands-free |
 
-Each reopened session gets the project name as its iTerm **window title, tab title, session name, and badge**. Ambiguous folder names (`web`, `core`, `app`) are shown as `parent/base`, with an emoji marker and a "last active" time, so a long list stays scannable.
+On restore, each session:
+
+- opens in a per-project window (`~/Sites/<project>/…` → one window per `<project>`, one tab each), friendly project name shown in the iTerm **badge**;
+- returns to its saved **position + size**, and its **virtual desktop / Space** (best-effort — see below);
+- skips the **"Is this a project you trust?"** prompt (pre-seeded in `~/.claude.json`, with a keystroke fallback) and auto-picks **Resume from summary**;
+- receives the text in `scripts/continue-prompt.txt` so it reports Client/Project/Mission/Goals/Tasks and carries on, stopping only for human-in-the-loop blockers.
 
 ## Install
 
@@ -23,39 +28,49 @@ cd claude-session-restorer
 bash install.sh
 ```
 
-Requirements: macOS, [iTerm2](https://iterm2.com), and the `claude` CLI on your PATH.
+Requirements: macOS, [iTerm2](https://iterm2.com), the `claude` CLI on your PATH, `python3`, and Xcode Command Line Tools (`clang`, for the Spaces helper). The installer creates a Python venv with the `iterm2` module and enables iTerm2's Python API.
+
+### One manual step for Space restore
+
+Restoring the **virtual desktop** needs Screen Recording permission (to map iTerm windows to a Space). After install:
+
+**System Settings → Privacy & Security → Screen Recording** → add **Restore AI Windows** (and **iTerm**).
+
+Without it, position and size still restore; the Space is recorded/applied as `-1` (no move).
 
 ## How it works
 
-Claude Code stores each session as a JSONL transcript under `~/.claude/projects/<slug>/<id>.jsonl`, and each transcript records the session's working directory. The scripts read the most-recent `cwd` from every recently-modified transcript and reopen `claude --resume <id>` there. Subagent transcripts are skipped; sessions whose directory no longer exists are skipped.
+Claude Code stores each session as a JSONL transcript under `~/.claude/projects/<slug>/<id>.jsonl` that records the session's `cwd`. The snapshot reads the most-recent `cwd` from every recently-modified transcript (→ `active.tsv`) and, while iTerm is up, captures each project window's frame + Space (→ `geometry.tsv`). The restore driver groups by project, resumes each session, drives the prompts, restores geometry, and injects the continue-prompt — all over the iTerm2 Python API.
 
-- `scripts/claude-session-list.sh [minutes]` — list restorable sessions (default 2-day window)
-- `scripts/claude-session-snapshot.sh` — write active sessions to `~/.claude/session-state/active.tsv`
-- `scripts/claude-session-restore.sh [--force]` — reopen the snapshot (one window each)
-- `scripts/build-restorer-app.sh` — (re)build the Dock app from the AppleScript source
+- `scripts/claude-session-list.sh [minutes]` — list restorable sessions
+- `scripts/claude-session-snapshot.sh` — write `active.tsv` + run the geometry snapshot
+- `scripts/claude-geometry-snapshot.py` — capture per-project position/size/Space
+- `scripts/claude-session-restore.sh [--force]` — guard + launch iTerm, then run the driver
+- `scripts/claude-restore-driver.py` — the engine (grouping, resume, prompts, geometry, continue)
+- `scripts/spacesctl/spacesctl.m` — private-CGS Spaces helper (compiled by the installer)
+- `scripts/continue-prompt.txt` — the prompt injected into each restored session
+- `scripts/build-restorer-app.sh` — (re)build the Dock app
 
 ## Manual use
 
 ```bash
-# Reopen the last snapshot right now
-bash ~/.claude/scripts/claude-session-restore.sh --force
-
-# List what would be restored
-bash ~/.claude/scripts/claude-session-list.sh
+bash ~/.claude/scripts/claude-session-restore.sh --force   # restore the last snapshot now
+bash ~/.claude/scripts/claude-session-list.sh              # list what would be restored
 ```
 
 ## Notes
 
-- **iTerm2 only.** The window automation targets iTerm2. Terminal.app would need the AppleScript rewritten.
-- **Icon cache gotcha:** macOS caches app icons by bundle *path*. If you rebuild the app and the Dock shows a generic icon, build at a fresh path — that is why the bundle is `ClaudeSessionRestorer.app` (no spaces). Clearing `/Library/Caches/com.apple.iconservices.store` needs sudo; changing the path does not.
+- **iTerm2 only.** The automation targets iTerm2's Python API.
+- **Activity window.** The snapshot captures sessions active in the last ~15 min; an idle-but-open window may not be in the set.
+- **Spaces are best-effort** and use private CoreGraphics APIs; they can change across macOS releases.
 
 ## Uninstall
 
 ```bash
 launchctl unload ~/Library/LaunchAgents/com.spencer.claude-{snapshot,restore}.plist
 rm ~/Library/LaunchAgents/com.spencer.claude-{snapshot,restore}.plist
-rm -rf "/Applications/ClaudeSessionRestorer.app" ~/.claude/skills/restore-claude-sessions
-# scripts in ~/.claude/scripts and state in ~/.claude/session-state can be removed too
+rm -rf "/Applications/Restore AI Windows.app" ~/.claude/skills/restore-claude-sessions
+# scripts in ~/.claude/scripts (incl. itermvenv) and state in ~/.claude/session-state can be removed too
 ```
 
 ## License
