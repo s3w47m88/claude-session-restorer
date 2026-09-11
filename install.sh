@@ -54,10 +54,12 @@ echo "› Enabling the iTerm2 Python API…"
 defaults write com.googlecode.iterm2 EnableAPIServer -bool true 2>/dev/null || true
 
 echo "› Writing launchd agents (with your home path)…"
-for name in com.spencer.claude-snapshot com.spencer.claude-restore; do
+for name in com.theportlandcompany.claude-snapshot com.theportlandcompany.claude-restore; do
   sed "s#__HOME__#$HOME#g" "$HERE/launchagents/$name.plist" > "$LAGENTS/$name.plist"
+  launchctl bootout "gui/$(id -u)" "$LAGENTS/$name.plist" 2>/dev/null || true
   launchctl unload "$LAGENTS/$name.plist" 2>/dev/null || true
-  launchctl load -w "$LAGENTS/$name.plist"
+  launchctl bootstrap "gui/$(id -u)" "$LAGENTS/$name.plist" 2>/dev/null \
+    || launchctl load -w "$LAGENTS/$name.plist"
 done
 
 echo "› Building the macOS app…"

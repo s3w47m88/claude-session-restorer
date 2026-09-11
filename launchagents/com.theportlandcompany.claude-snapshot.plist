@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
   <key>Label</key>
-  <string>com.spencer.claude-snapshot</string>
+  <string>com.theportlandcompany.claude-snapshot</string>
   <key>ProgramArguments</key>
   <array>
     <string>/bin/bash</string>

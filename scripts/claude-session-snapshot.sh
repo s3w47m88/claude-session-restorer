@@ -7,6 +7,7 @@
 set -uo pipefail
 
 PROJECTS="$HOME/.claude/projects"
+SCRIPTS="$HOME/.claude/scripts"
 STATE_DIR="$HOME/.claude/session-state"
 OUT="$STATE_DIR/active.tsv"
 TMP="$STATE_DIR/.active.tsv.$$"
@@ -44,4 +45,14 @@ if pgrep -xq iTerm2 2>/dev/null && [ -x "$VENV_PY" ] && [ -f "$GEO_PY" ]; then
   gpid=$!
   ( sleep 25; kill "$gpid" 2>/dev/null ) >/dev/null 2>&1 &
   wait "$gpid" 2>/dev/null
+fi
+
+# Also capture open BrowserOS windows/tabs (grouped, positioned, Space-tagged).
+# Best-effort, time-boxed, never blocks the snapshot.
+BROWSER_PY="$SCRIPTS/browser-snapshot.py"
+if [ -f "$BROWSER_PY" ]; then
+  python3 "$BROWSER_PY" >/dev/null 2>&1 &
+  bpid=$!
+  ( sleep 15; kill "$bpid" 2>/dev/null ) >/dev/null 2>&1 &
+  wait "$bpid" 2>/dev/null
 fi

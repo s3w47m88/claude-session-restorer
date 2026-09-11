@@ -31,7 +31,7 @@ regrouping already-open windows requires closing + re-resuming them as tabs.
 | Spaces helper | `~/.claude/scripts/spacesctl/spacesctl` | Private-CGS binary: `current` / `window <cgid>` / `move <cgid> <desktop>` / `find [owner]`. Needs Screen Recording to see/move windows |
 | Continue prompt | `~/.claude/scripts/continue-prompt.txt` | Editable text injected into each restored session after it loads |
 | venv | `~/.claude/scripts/itermvenv` | Persistent Python venv with the `iterm2` module (driver + geometry snapshot use it) |
-| launchd | `~/Library/LaunchAgents/com.spencer.claude-snapshot.plist`, `com.spencer.claude-restore.plist` | Drive snapshot (every 120s) + restore (at login) |
+| launchd | `~/Library/LaunchAgents/com.theportlandcompany.claude-snapshot.plist`, `com.theportlandcompany.claude-restore.plist` | Drive snapshot (every 120s) + restore (at login) |
 | Dock app | `/Applications/Restore AI Windows.app` | One-click: runs the restore driver (`--force`) with a notification. Pinned to the Dock |
 
 **Trust + resume prompts.** The driver pre-seeds `hasTrustDialogAccepted` in `~/.claude.json`
@@ -51,7 +51,11 @@ but `Space` is recorded/applied as `-1` (no move). Position and size never need 
 bash ~/.claude/scripts/claude-session-restore.sh --force
 ```
 `--force` bypasses the 10-minute de-dupe guard. Without it, a restore that ran in the
-last 10 min is skipped.
+last 10 min is skipped. By default this restores both iTerm sessions and BrowserOS
+windows/tabs (from `session-state/browser.tsv`, written by `browser-snapshot.py` every
+snapshot cycle). Use `--browser` to restore only the browser windows, `--all` to restore
+both explicitly, or set `RESTORE_SKIP_BROWSER=1` to skip the browser step. The browser
+restore (`browser-restore.py`) is best-effort and never fails the overall run.
 
 **"What sessions were recently open?"** — list them (default 2-day window; pass minutes to narrow):
 ```bash

@@ -1,0 +1,73 @@
+[extend]
+useDefault = true
+
+[[rules]]
+id = "pii-home-path-spencer"
+description = "Detects /Users/spencerhill path"
+regex = '/Users/spencerhill'
+severity = "HIGH"
+
+[[rules]]
+id = "pii-name-spencer-hill"
+description = "Detects Spencer Hill name"
+regex = '[Ss]pencer [Hh]ill'
+severity = "HIGH"
+
+[[rules]]
+id = "pii-username-spencerhill"
+description = "Detects spencerhill username"
+regex = 'spencerhill'
+severity = "HIGH"
+
+[[rules]]
+id = "pii-phone-1503"
+description = "Detects US phone number starting with +1503"
+regex = '\+1503\d{7}'
+severity = "HIGH"
+
+[[rules]]
+id = "pii-phone-503-dash"
+description = "Detects US phone number with 503- prefix"
+regex = '503-\d{3}-\d{4}'
+severity = "HIGH"
+
+[[rules]]
+id = "pii-phone-5036108759"
+description = "Detects specific phone number 5036108759"
+regex = '5036108759'
+severity = "HIGH"
+
+[[rules]]
+id = "pii-phone-5034336772"
+description = "Detects specific phone number 5034336772"
+regex = '5034336772'
+severity = "HIGH"
+
+[[rules]]
+id = "pii-protonmail"
+description = "Detects @protonmail.com email addresses"
+regex = '[a-zA-Z0-9._%+-]+@protonmail\.com'
+severity = "HIGH"
+
+[[rules]]
+id = "pii-spencerdhill"
+description = "Detects spencerdhill email/username"
+regex = 'spencerdhill'
+severity = "HIGH"
+
+[[rules]]
+id = "pii-generic-home-path"
+description = "Detects absolute home paths /Users/<name>"
+regex = '''/Users/[a-z][a-z0-9]*(?:/|['"])'''
+severity = "MEDIUM"
+
+[allowlist]
+# Root commit's LICENSE carried the author's own name in the copyright line
+# (superseded in the working tree by "The Portland Company"). Non-sensitive
+# attribution, left intact to avoid rewriting history in already-cloned copies.
+commits = ["d0c78068f533ec04f4a07ef04ec8fc96cfa26ceb"]
+paths = [
+  '''scripts/ci/pii-scan\.py''',
+  '''\.github/workflows/security\.yml''',
+  '''\.gitleaks\.toml''',
+]

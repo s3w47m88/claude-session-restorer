@@ -3,3 +3,4 @@
 scripts/spacesctl/spacesctl
 itermvenv/
 *.tsv
+session-state/
