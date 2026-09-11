@@ -29,7 +29,7 @@ PLIST="$APP/Contents/Info.plist"
 PB=/usr/libexec/PlistBuddy
 "$PB" -c "Add :CFBundleName string Restore AI Windows" "$PLIST" 2>/dev/null || "$PB" -c "Set :CFBundleName Restore AI Windows" "$PLIST"
 "$PB" -c "Add :CFBundleDisplayName string Restore AI Windows" "$PLIST" 2>/dev/null || "$PB" -c "Set :CFBundleDisplayName Restore AI Windows" "$PLIST"
-"$PB" -c "Add :CFBundleIdentifier string com.spencer.restoreaiwindows" "$PLIST" 2>/dev/null || "$PB" -c "Set :CFBundleIdentifier com.spencer.restoreaiwindows" "$PLIST"
+"$PB" -c "Add :CFBundleIdentifier string com.theportlandcompany.restoreaiwindows" "$PLIST" 2>/dev/null || "$PB" -c "Set :CFBundleIdentifier com.theportlandcompany.restoreaiwindows" "$PLIST"
 
 # Custom icon (best-effort; needs the icon PNG present).
 if [ -f "$PNG" ]; then

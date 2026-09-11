@@ -12,6 +12,7 @@ Reopen your [Claude Code](https://claude.com/claude-code) sessions after a crash
 | **Auto-restore** | A launchd agent restores automatically at every login |
 | **Snapshot** | A launchd agent records active sessions **and window geometry** every 2 min |
 | **Claude Code skill** | Say *"restore my sessions"* inside Claude Code to run it hands-free |
+| **Browser restore** | Reopens your browser windows too — tabs **grouped into their original windows**, on their saved Space, position, and size |
 
 On restore, each session:
 
@@ -19,6 +20,17 @@ On restore, each session:
 - returns to its saved **position + size**, and its **virtual desktop / Space** (best-effort — see below);
 - skips the **"Is this a project you trust?"** prompt (pre-seeded in `~/.claude.json`, with a keystroke fallback) and auto-picks **Resume from summary**;
 - receives the text in `scripts/continue-prompt.txt` so it reports Client/Project/Mission/Goals/Tasks and carries on, stopping only for human-in-the-loop blockers.
+
+## Browser sessions
+
+Alongside your iTerm Claude Code sessions, the restorer snapshots and reopens your **browser** windows ([BrowserOS](https://browseros.com), a Chromium fork — any Chromium-family browser with AppleScript window/tab scripting works). It records each open window's **tabs, window grouping, geometry, and virtual desktop / Space**, then on restore opens one window per saved group, sets its position and size, and moves it back to its Space (best-effort — same Screen Recording requirement as below; without it, geometry restores and the Space is skipped).
+
+`claude-session-restore.sh` flags:
+
+- (default) — restore iTerm sessions **and** browser windows
+- `--browser` — restore browser windows only
+- `--all` — restore both (explicit)
+- `RESTORE_SKIP_BROWSER=1` — restore iTerm only (opt out of browser)
 
 ## Install
 
@@ -67,8 +79,8 @@ bash ~/.claude/scripts/claude-session-list.sh              # list what would be 
 ## Uninstall
 
 ```bash
-launchctl unload ~/Library/LaunchAgents/com.spencer.claude-{snapshot,restore}.plist
-rm ~/Library/LaunchAgents/com.spencer.claude-{snapshot,restore}.plist
+launchctl unload ~/Library/LaunchAgents/com.theportlandcompany.claude-{snapshot,restore}.plist
+rm ~/Library/LaunchAgents/com.theportlandcompany.claude-{snapshot,restore}.plist
 rm -rf "/Applications/Restore AI Windows.app" ~/.claude/skills/restore-claude-sessions
 # scripts in ~/.claude/scripts (incl. itermvenv) and state in ~/.claude/session-state can be removed too
 ```

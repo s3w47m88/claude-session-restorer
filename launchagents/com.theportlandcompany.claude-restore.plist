@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
   <key>Label</key>
-  <string>com.spencer.claude-restore</string>
+  <string>com.theportlandcompany.claude-restore</string>
   <key>ProgramArguments</key>
   <array>
     <string>/bin/bash</string>
