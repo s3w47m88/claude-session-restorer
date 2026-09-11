@@ -1,0 +1,53 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    runs-on: macos-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Extract version
+        id: version
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Install Xcode CLI tools
+        run: |
+          xcode-select --install 2>/dev/null || true
+          sleep 30
+
+      - name: Build app and DMG
+        run: bash scripts/build-app-and-dmg.sh ${{ steps.version.outputs.version }}
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.dmg
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # OPTIONAL: Uncomment below to enable notarization in CI.
+      # Create a GitHub secret named NOTARY_KEY (App Store Connect API private key),
+      # NOTARY_KEY_ID (API key ID), and NOTARY_ISSUER (Issuer ID).
+      # The build script will then automatically notarize and staple the app.
+      #
+      # - name: Setup notarization (optional)
+      #   if: vars.ENABLE_NOTARIZATION == 'true'
+      #   run: |
+      #     echo "NOTARY_KEY=${{ secrets.NOTARY_KEY }}" >> $GITHUB_ENV
+      #     echo "NOTARY_KEY_ID=${{ secrets.NOTARY_KEY_ID }}" >> $GITHUB_ENV
+      #     echo "NOTARY_ISSUER=${{ secrets.NOTARY_ISSUER }}" >> $GITHUB_ENV
