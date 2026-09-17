@@ -12,6 +12,7 @@ Reads the snapshot (which sessions were active) plus saved window geometry, then
 
 Run:  python3 claude-restore-driver.py [active.tsv] [geometry.tsv]
 Env:  DRIVER_TEST_ID=<session-id>  -> drive just that one session in a new window
+      RESTORE_SESSION_FILTER=sid1,sid2,...  -> only restore these session IDs
 """
 import asyncio, base64, json, os, sys, subprocess
 
@@ -22,13 +23,34 @@ ACTIVE = sys.argv[1] if len(sys.argv) > 1 else os.path.join(STATE, "active.tsv")
 GEOM = sys.argv[2] if len(sys.argv) > 2 else os.path.join(STATE, "geometry.tsv")
 SPACESCTL = os.path.join(SCRIPTS, "spacesctl", "spacesctl")
 CONT_FILE = os.path.join(SCRIPTS, "continue-prompt.txt")
+HANDOFF_DIR = os.path.join(HOME, ".claude", "handoffs")
 BASE = os.path.join(HOME, "Sites")
+SESSION_FILTER = set(os.environ.get("RESTORE_SESSION_FILTER", "").split(",")) if os.environ.get("RESTORE_SESSION_FILTER") else set()
 
 def cont_prompt():
     try:
         return open(CONT_FILE).read().strip()
     except OSError:
         return "Continue where you left off. Only stop for HITL if you are blocked."
+
+def load_handoff(cwd):
+    """Load handoff summary for a cwd if it exists."""
+    if not cwd:
+        return ""
+    # Convert cwd to slug: $HOME/Sites/foo → users-you-sites-foo
+    slug = cwd.replace("/", "-").strip("-").lower()
+    handoff_path = os.path.join(HANDOFF_DIR, f"{slug}.md")
+    try:
+        with open(handoff_path) as f:
+            content = f.read().strip()
+            # Extract just the body (skip frontmatter)
+            if content.startswith("---"):
+                parts = content.split("---", 2)
+                if len(parts) >= 3:
+                    return parts[2].strip()
+            return content
+    except OSError:
+        return ""
 
 def project_key(cwd):
     if cwd == BASE:
@@ -77,7 +99,11 @@ def load_active():
         for line in open(ACTIVE):
             parts = line.rstrip("\n").split("\t")
             if len(parts) >= 2 and parts[0] and os.path.isdir(parts[1]):
-                rows.append((parts[0], parts[1]))
+                sid = parts[0]
+                # Filter by RESTORE_SESSION_FILTER if set
+                if SESSION_FILTER and sid not in SESSION_FILTER:
+                    continue
+                rows.append((sid, parts[1]))
     except OSError:
         pass
     return rows
@@ -101,9 +127,10 @@ async def screen_text(session):
     except Exception:
         return ""
 
-async def drive_session(session, prompt):
-    """Auto-answer trust + resume prompts, then inject the continuation prompt."""
+async def drive_session(session, prompt, cwd=None):
+    """Auto-answer trust + resume prompts, then inject the continuation prompt + handoff summary."""
     trust_done = resume_done = sent = False
+    handoff = load_handoff(cwd) if cwd else ""
     for _ in range(180):  # up to ~3 min
         txt = await screen_text(session)
         low = txt.lower()
@@ -116,10 +143,15 @@ async def drive_session(session, prompt):
         if not sent and ("? for shortcuts" in low or "bypass permissions" in low
                          or "bypassing permissions" in low):
             await asyncio.sleep(1.0)
+            # Inject handoff summary if available, then the continuation prompt
+            if handoff:
+                await session.async_send_text(handoff + "\r"); await asyncio.sleep(0.5)
             await session.async_send_text(prompt + "\r"); sent = True
             return True
         await asyncio.sleep(1)
     if not sent:  # fallback: send anyway so nothing is silently dropped
+        if handoff:
+            await session.async_send_text(handoff + "\r"); await asyncio.sleep(0.5)
         await session.async_send_text(prompt + "\r")
     return sent
 
@@ -185,12 +217,12 @@ async def main(connection):
         first = win.tabs[0].sessions[0]
         sid, cwd = members[0]
         await first.async_send_text(resume_cmd(cwd, sid, badge0) + "\n")
-        drivers.append(drive_session(first, prompt))
+        drivers.append(drive_session(first, prompt, cwd))
         for sid, cwd in members[1:]:
             tab = await win.async_create_tab()
             s = tab.sessions[0]
             await s.async_send_text(resume_cmd(cwd, sid, badge0) + "\n")
-            drivers.append(drive_session(s, prompt))
+            drivers.append(drive_session(s, prompt, cwd))
             await asyncio.sleep(0.3)
         if key in geo:
             await apply_geometry(win, geo[key])

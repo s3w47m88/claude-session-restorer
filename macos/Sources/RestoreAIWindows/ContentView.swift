@@ -4,6 +4,8 @@ struct ContentView: View {
     @EnvironmentObject var store: SnapshotStore
     @EnvironmentObject var runner: ActionRunner
     @AppStorage("restoreBrowserWindows") private var restoreBrowser = true
+    @State private var selectedSessions: Set<String> = []
+    @State private var showSessionPicker = false
 
     var body: some View {
         ScrollView {
@@ -12,6 +14,12 @@ struct ContentView: View {
 
                 GroupBox("Last snapshot") {
                     snapshotSummary
+                }
+
+                if !store.projects.isEmpty && showSessionPicker {
+                    GroupBox("Select sessions to restore") {
+                        sessionPicker
+                    }
                 }
 
                 GroupBox("Permissions") {
@@ -30,8 +38,16 @@ struct ContentView: View {
             }
             .padding(20)
         }
-        .frame(minWidth: 460, minHeight: 480)
-        .onAppear { store.reload() }
+        .frame(minWidth: 460, minHeight: 580)
+        .onAppear {
+            store.reload()
+            // Pre-select all sessions by default
+            for project in store.projects {
+                for session in project.sessions {
+                    selectedSessions.insert(session.id)
+                }
+            }
+        }
     }
 
     private var header: some View {
@@ -76,6 +92,39 @@ struct ContentView: View {
         }
     }
 
+    private var sessionPicker: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            ForEach(store.projects) { project in
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(project.project).font(.caption).fontWeight(.semibold).foregroundStyle(.secondary)
+                    ForEach(project.sessions) { session in
+                        HStack {
+                            Image(systemName: selectedSessions.contains(session.id) ? "checkmark.square.fill" : "square")
+                                .foregroundStyle(selectedSessions.contains(session.id) ? .blue : .gray)
+                                .onTapGesture {
+                                    if selectedSessions.contains(session.id) {
+                                        selectedSessions.remove(session.id)
+                                    } else {
+                                        selectedSessions.insert(session.id)
+                                    }
+                                }
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(session.id.prefix(8).uppercased()).font(.caption).monospaced()
+                                Text(session.cwd).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+                                if session.handoffPath != nil {
+                                    Label("has summary", systemImage: "doc.text").font(.caption2).foregroundStyle(.green)
+                                }
+                            }
+                            Spacer()
+                        }
+                        .padding(.vertical, 4)
+                    }
+                    Divider()
+                }
+            }
+        }
+    }
+
     private var permissionsList: some View {
         VStack(alignment: .leading, spacing: 10) {
             permissionRow(
@@ -113,12 +162,21 @@ struct ContentView: View {
             Toggle("Also restore browser windows", isOn: $restoreBrowser)
 
             HStack {
+                if !store.projects.isEmpty {
+                    Button {
+                        showSessionPicker.toggle()
+                    } label: {
+                        Label(showSessionPicker ? "Hide sessions" : "Choose sessions", systemImage: "checkmark.circle")
+                    }
+                    .disabled(runner.isRunning)
+                }
+
                 Button {
-                    runner.restoreNow(includeBrowser: restoreBrowser)
+                    runner.restoreNow(includeBrowser: restoreBrowser, selectedSessions: Array(selectedSessions))
                 } label: {
                     Label("Restore Now", systemImage: "play.fill")
                 }
-                .disabled(runner.isRunning)
+                .disabled(runner.isRunning || selectedSessions.isEmpty)
 
                 Button {
                     runner.snapshotNow()

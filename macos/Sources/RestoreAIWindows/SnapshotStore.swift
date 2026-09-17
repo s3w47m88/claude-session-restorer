@@ -1,10 +1,18 @@
 import Foundation
 import Combine
 
+struct ClaudeSession: Identifiable {
+    let id: String
+    let project: String
+    let cwd: String
+    let handoffPath: String?
+}
+
 struct ProjectSessions: Identifiable {
     var id: String { project }
     let project: String
-    let sessionCount: Int
+    let sessions: [ClaudeSession]
+    var sessionCount: Int { sessions.count }
 }
 
 struct BrowserWindowInfo: Identifiable {
@@ -24,22 +32,37 @@ final class SnapshotStore: ObservableObject {
         let stateDir = Engine.sessionStateDir
         let activePath = stateDir.appendingPathComponent("active.tsv")
         let browserPath = stateDir.appendingPathComponent("browser.tsv")
+        let handoffDir = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude/handoffs")
 
         var found = false
 
         if let text = try? String(contentsOf: activePath, encoding: .utf8) {
             found = true
-            var counts: [String: Int] = [:]
+            var projectMap: [String: [ClaudeSession]] = [:]
             var order: [String] = []
             for line in text.split(separator: "\n") {
                 let cols = line.split(separator: "\t", maxSplits: 1)
                 guard cols.count == 2 else { continue }
+                let sessionId = String(cols[0])
                 let cwd = String(cols[1])
                 let project = (cwd as NSString).lastPathComponent
-                if counts[project] == nil { order.append(project) }
-                counts[project, default: 0] += 1
+
+                // Look for handoff file: ~/.claude/handoffs/<cwd-slug>.md
+                let cwdSlug = cwd.replacingOccurrences(of: "/", with: "-").trimmingCharacters(in: CharacterSet(charactersIn: "-")).lowercased()
+                let handoffPath = handoffDir.appendingPathComponent("\(cwdSlug).md").path
+                let hasHandoff = FileManager.default.fileExists(atPath: handoffPath)
+
+                let session = ClaudeSession(
+                    id: sessionId,
+                    project: project,
+                    cwd: cwd,
+                    handoffPath: hasHandoff ? handoffPath : nil
+                )
+
+                if projectMap[project] == nil { order.append(project) }
+                projectMap[project, default: []].append(session)
             }
-            projects = order.map { ProjectSessions(project: $0, sessionCount: counts[$0] ?? 0) }
+            projects = order.map { ProjectSessions(project: $0, sessions: projectMap[$0] ?? []) }
         } else {
             projects = []
         }

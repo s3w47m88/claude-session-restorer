@@ -1,5 +1,5 @@
 import Foundation
-import UserNotifications
+@preconcurrency import UserNotifications
 
 @MainActor
 final class ActionRunner: ObservableObject {
@@ -7,10 +7,13 @@ final class ActionRunner: ObservableObject {
     @Published var lastResult: String?
     @Published var lastFailed = false
 
-    func restoreNow(includeBrowser: Bool) {
+    func restoreNow(includeBrowser: Bool, selectedSessions: [String] = []) {
         run(label: "Restore") {
             var env: [String: String] = [:]
             if !includeBrowser { env["RESTORE_SKIP_BROWSER"] = "1" }
+            if !selectedSessions.isEmpty {
+                env["RESTORE_SESSION_FILTER"] = selectedSessions.joined(separator: ",")
+            }
             return try Engine.run(script: "claude-session-restore.sh", args: ["--force"], env: env)
         }
     }
@@ -66,13 +69,10 @@ final class ActionRunner: ObservableObject {
 
     private func notify(title: String, body: String) {
         let center = UNUserNotificationCenter.current()
-        center.requestAuthorization(options: [.alert]) { granted, _ in
-            guard granted else { return }
-            let content = UNMutableNotificationContent()
-            content.title = title
-            content.body = body
-            let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
-            center.add(request)
-        }
+        let content = UNMutableNotificationContent()
+        content.title = title
+        content.body = body
+        let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
+        center.add(request) { _ in }
     }
 }
