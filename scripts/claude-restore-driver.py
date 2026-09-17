@@ -14,7 +14,7 @@ Run:  python3 claude-restore-driver.py [active.tsv] [geometry.tsv]
 Env:  DRIVER_TEST_ID=<session-id>  -> drive just that one session in a new window
       RESTORE_SESSION_FILTER=sid1,sid2,...  -> only restore these session IDs
 """
-import asyncio, base64, json, os, sys, subprocess
+import asyncio, base64, json, os, re, sys, subprocess
 
 HOME = os.path.expanduser("~")
 SCRIPTS = os.path.join(HOME, ".claude", "scripts")
@@ -37,8 +37,9 @@ def load_handoff(cwd):
     """Load handoff summary for a cwd if it exists."""
     if not cwd:
         return ""
-    # Convert cwd to slug: $HOME/Sites/foo → users-you-sites-foo
-    slug = cwd.replace("/", "-").strip("-").lower()
+    # Slug must match write-handoff.mjs exactly: non-alphanumeric runs -> "-", no lowercasing.
+    # e.g. ~/Sites/foo -> Users-<user>-Sites-foo
+    slug = re.sub(r"[^A-Za-z0-9]+", "-", cwd).strip("-")
     handoff_path = os.path.join(HANDOFF_DIR, f"{slug}.md")
     try:
         with open(handoff_path) as f:

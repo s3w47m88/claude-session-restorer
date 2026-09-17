@@ -48,7 +48,10 @@ final class SnapshotStore: ObservableObject {
                 let project = (cwd as NSString).lastPathComponent
 
                 // Look for handoff file: ~/.claude/handoffs/<cwd-slug>.md
-                let cwdSlug = cwd.replacingOccurrences(of: "/", with: "-").trimmingCharacters(in: CharacterSet(charactersIn: "-")).lowercased()
+                // Must match write-handoff.mjs: non-alphanumeric runs -> "-", case preserved.
+                let cwdSlug = cwd
+                    .replacingOccurrences(of: "[^A-Za-z0-9]+", with: "-", options: .regularExpression)
+                    .trimmingCharacters(in: CharacterSet(charactersIn: "-"))
                 let handoffPath = handoffDir.appendingPathComponent("\(cwdSlug).md").path
                 let hasHandoff = FileManager.default.fileExists(atPath: handoffPath)
 

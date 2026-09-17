@@ -5,7 +5,7 @@ struct ContentView: View {
     @EnvironmentObject var runner: ActionRunner
     @AppStorage("restoreBrowserWindows") private var restoreBrowser = true
     @State private var selectedSessions: Set<String> = []
-    @State private var showSessionPicker = false
+    @State private var showSessionPicker = true
 
     var body: some View {
         ScrollView {
@@ -40,6 +40,7 @@ struct ContentView: View {
         }
         .frame(minWidth: 460, minHeight: 580)
         .onAppear {
+            runner.requestNotificationPermission()
             store.reload()
             // Pre-select all sessions by default
             for project in store.projects {

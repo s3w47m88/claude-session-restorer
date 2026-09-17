@@ -5,3 +5,5 @@ itermvenv/
 *.tsv
 session-state/
 dist/
+scripts/__pycache__/
+.build/

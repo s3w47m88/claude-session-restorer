@@ -67,6 +67,11 @@ final class ActionRunner: ObservableObject {
         }
     }
 
+    /// Ask once, up front — `add` silently drops notifications until it is granted.
+    func requestNotificationPermission() {
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
+    }
+
     private func notify(title: String, body: String) {
         let center = UNUserNotificationCenter.current()
         let content = UNMutableNotificationContent()
