@@ -42,12 +42,16 @@ struct ContentView: View {
         .onAppear {
             runner.requestNotificationPermission()
             store.reload()
+            store.startWatching()
             // Pre-select all sessions by default
             for project in store.projects {
                 for session in project.sessions {
                     selectedSessions.insert(session.id)
                 }
             }
+        }
+        .onDisappear {
+            store.stopWatching()
         }
     }
 
@@ -74,6 +78,15 @@ struct ContentView: View {
                     Text("Captured \(updated.formatted(.relative(presentation: .named)))")
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                }
+                if let windowCount = store.windowCount, let tabCount = store.tabCount {
+                    let sessionCount = store.projects.reduce(0) { $0 + $1.sessionCount }
+                    Label(
+                        "\(windowCount) window\(windowCount == 1 ? "" : "s"), "
+                        + "\(tabCount) tab\(tabCount == 1 ? "" : "s"), "
+                        + "\(sessionCount) session\(sessionCount == 1 ? "" : "s")",
+                        systemImage: "square.grid.2x2"
+                    )
                 }
                 if store.projects.isEmpty {
                     Text("No iTerm sessions captured.").foregroundStyle(.secondary)
@@ -130,7 +143,10 @@ struct ContentView: View {
         VStack(alignment: .leading, spacing: 10) {
             permissionRow(
                 name: "Screen Recording",
-                detail: "needed to restore each window's virtual desktop (Space)",
+                // Space (virtual desktop) lookup uses a separate private API and works
+                // fine without this. Without it, only window TITLES read back empty —
+                // window ids and Spaces still resolve correctly.
+                detail: "needed to read window titles; Space (desktop) placement works either way",
                 granted: Permissions.screenRecordingGranted,
                 openSettings: Permissions.openScreenRecordingSettings
             )
@@ -180,8 +196,7 @@ struct ContentView: View {
                 .disabled(runner.isRunning || selectedSessions.isEmpty)
 
                 Button {
-                    runner.snapshotNow()
-                    store.reload()
+                    runner.snapshotNow { store.reload() }
                 } label: {
                     Label("Snapshot Now", systemImage: "camera.fill")
                 }

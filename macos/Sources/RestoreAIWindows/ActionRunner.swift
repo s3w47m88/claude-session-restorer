@@ -18,8 +18,8 @@ final class ActionRunner: ObservableObject {
         }
     }
 
-    func snapshotNow() {
-        run(label: "Snapshot") {
+    func snapshotNow(onComplete: (() -> Void)? = nil) {
+        run(label: "Snapshot", onComplete: onComplete) {
             try Engine.run(script: "claude-session-snapshot.sh")
         }
     }
@@ -48,7 +48,7 @@ final class ActionRunner: ObservableObject {
         }
     }
 
-    private func run(label: String, _ work: @escaping () throws -> Engine.RunResult) {
+    private func run(label: String, onComplete: (() -> Void)? = nil, _ work: @escaping () throws -> Engine.RunResult) {
         isRunning = true
         lastResult = nil
         Task {
@@ -58,11 +58,14 @@ final class ActionRunner: ObservableObject {
                 self.lastFailed = result.exitCode != 0
                 self.lastResult = "\(label) \(result.exitCode == 0 ? "succeeded" : "failed (exit \(result.exitCode))")"
                 self.notify(title: "Restore AI Windows", body: self.lastResult ?? label)
+                // Only now has the script actually finished writing state — safe to reload.
+                onComplete?()
             } catch {
                 self.isRunning = false
                 self.lastFailed = true
                 self.lastResult = "\(label) failed: \(error.localizedDescription)"
                 self.notify(title: "Restore AI Windows", body: self.lastResult ?? label)
+                onComplete?()
             }
         }
     }
