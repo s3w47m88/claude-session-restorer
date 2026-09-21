@@ -1,5 +1,5 @@
 import Foundation
-import UserNotifications
+@preconcurrency import UserNotifications
 
 @MainActor
 final class ActionRunner: ObservableObject {
@@ -7,16 +7,19 @@ final class ActionRunner: ObservableObject {
     @Published var lastResult: String?
     @Published var lastFailed = false
 
-    func restoreNow(includeBrowser: Bool) {
+    func restoreNow(includeBrowser: Bool, selectedSessions: [String] = []) {
         run(label: "Restore") {
             var env: [String: String] = [:]
             if !includeBrowser { env["RESTORE_SKIP_BROWSER"] = "1" }
+            if !selectedSessions.isEmpty {
+                env["RESTORE_SESSION_FILTER"] = selectedSessions.joined(separator: ",")
+            }
             return try Engine.run(script: "claude-session-restore.sh", args: ["--force"], env: env)
         }
     }
 
-    func snapshotNow() {
-        run(label: "Snapshot") {
+    func snapshotNow(onComplete: (() -> Void)? = nil) {
+        run(label: "Snapshot", onComplete: onComplete) {
             try Engine.run(script: "claude-session-snapshot.sh")
         }
     }
@@ -45,7 +48,7 @@ final class ActionRunner: ObservableObject {
         }
     }
 
-    private func run(label: String, _ work: @escaping () throws -> Engine.RunResult) {
+    private func run(label: String, onComplete: (() -> Void)? = nil, _ work: @escaping () throws -> Engine.RunResult) {
         isRunning = true
         lastResult = nil
         Task {
@@ -55,24 +58,29 @@ final class ActionRunner: ObservableObject {
                 self.lastFailed = result.exitCode != 0
                 self.lastResult = "\(label) \(result.exitCode == 0 ? "succeeded" : "failed (exit \(result.exitCode))")"
                 self.notify(title: "Restore AI Windows", body: self.lastResult ?? label)
+                // Only now has the script actually finished writing state — safe to reload.
+                onComplete?()
             } catch {
                 self.isRunning = false
                 self.lastFailed = true
                 self.lastResult = "\(label) failed: \(error.localizedDescription)"
                 self.notify(title: "Restore AI Windows", body: self.lastResult ?? label)
+                onComplete?()
             }
         }
     }
 
+    /// Ask once, up front — `add` silently drops notifications until it is granted.
+    func requestNotificationPermission() {
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
+    }
+
     private func notify(title: String, body: String) {
         let center = UNUserNotificationCenter.current()
-        center.requestAuthorization(options: [.alert]) { granted, _ in
-            guard granted else { return }
-            let content = UNMutableNotificationContent()
-            content.title = title
-            content.body = body
-            let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
-            center.add(request)
-        }
+        let content = UNMutableNotificationContent()
+        content.title = title
+        content.body = body
+        let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
+        center.add(request) { _ in }
     }
 }

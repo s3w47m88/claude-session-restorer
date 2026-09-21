@@ -1,8 +1,12 @@
 #!/bin/bash
-# Snapshot currently-active Claude Code sessions so they can be restored after a crash.
-# Runs every couple minutes via launchd. Writes the set of transcripts touched in the
-# last ACTIVE_MIN minutes to session-state/active.tsv (atomic replace).
-# Format per line:  <session-id>\t<cwd>
+# Snapshot the live Claude Code sessions so they can be restored after a crash.
+# Runs every couple of minutes via launchd, and on demand from the Dock app.
+#
+# iTerm is the source of truth: claude-iterm-snapshot.py walks every window, tab
+# and split and writes session-state/windows.json (plus the legacy active.tsv).
+# The old transcript-mtime scan is kept only as a fallback for when iTerm isn't
+# running, because it can only see sessions touched in the last ACTIVE_MIN
+# minutes and knows nothing about window layout.
 
 set -uo pipefail
 
@@ -14,9 +18,28 @@ TMP="$STATE_DIR/.active.tsv.$$"
 ACTIVE_MIN=15
 
 mkdir -p "$STATE_DIR"
-: > "$TMP"
 
-# Top-level session transcripts only (skip subagents/ subdirs), modified recently.
+# BrowserOS windows/tabs (grouped, positioned, Space-tagged). Best-effort,
+# time-boxed, never blocks the snapshot. Both paths below call this.
+snapshot_browser() {
+  local BROWSER_PY="$SCRIPTS/browser-snapshot.py"
+  [ -f "$BROWSER_PY" ] || return 0
+  python3 "$BROWSER_PY" >/dev/null 2>&1 &
+  local bpid=$!
+  ( sleep 15; kill "$bpid" 2>/dev/null ) >/dev/null 2>&1 &
+  wait "$bpid" 2>/dev/null
+}
+
+# --- Preferred path: ask iTerm what is actually open -------------------------
+if pgrep -xq iTerm2 && [ -f "$SCRIPTS/claude-iterm-snapshot.py" ]; then
+  if python3 "$SCRIPTS/claude-iterm-snapshot.py"; then
+    snapshot_browser
+    exit 0
+  fi
+  echo "iTerm snapshot failed; falling back to the transcript scan." >&2
+fi
+
+# --- Fallback: recently-touched transcripts, no layout ------------------------
 while IFS= read -r f; do
   [ -n "$f" ] || continue
   id="$(basename "$f" .jsonl)"
@@ -47,12 +70,5 @@ if pgrep -xq iTerm2 2>/dev/null && [ -x "$VENV_PY" ] && [ -f "$GEO_PY" ]; then
   wait "$gpid" 2>/dev/null
 fi
 
-# Also capture open BrowserOS windows/tabs (grouped, positioned, Space-tagged).
-# Best-effort, time-boxed, never blocks the snapshot.
-BROWSER_PY="$SCRIPTS/browser-snapshot.py"
-if [ -f "$BROWSER_PY" ]; then
-  python3 "$BROWSER_PY" >/dev/null 2>&1 &
-  bpid=$!
-  ( sleep 15; kill "$bpid" 2>/dev/null ) >/dev/null 2>&1 &
-  wait "$bpid" 2>/dev/null
-fi
+snapshot_browser
+

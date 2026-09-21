@@ -42,20 +42,33 @@ int main(int argc, char** argv){
       CGSMoveWindowsToManagedSpace(c,(__bridge CFArrayRef)@[@(atoi(argv[2]))],sid);
       printf("ok\n"); return 0;
     }
-    if([cmd isEqual:@"find"]){  // list on-screen windows for owner (default iTerm2): id x y w h title
+    if([cmd isEqual:@"find"]){  // list ALL windows (any Space) for owner (default iTerm2): id x y w h title
       NSString* owner = argc>=3 ? @(argv[2]) : @"iTerm2";
-      CFArrayRef info=CGWindowListCopyWindowInfo(kCGWindowListOptionOnScreenOnly|kCGWindowListExcludeDesktopElements,kCGNullWindowID);
+      CFArrayRef info=CGWindowListCopyWindowInfo(kCGWindowListOptionAll|kCGWindowListExcludeDesktopElements,kCGNullWindowID);
       for(NSDictionary* w in (__bridge_transfer NSArray*)info){
         if(![w[(id)kCGWindowOwnerName] isEqual:owner]) continue;
         NSDictionary* b=w[(id)kCGWindowBounds];
         int wid=[w[(id)kCGWindowNumber] intValue];
-        NSString* t=w[(id)kCGWindowName]?:@"";
+        NSString* t=w[(id)kCGWindowName]?:@"";  // may be empty without Screen Recording — window id/Space still valid
         printf("%d\t%.0f\t%.0f\t%.0f\t%.0f\t%s\n",wid,[b[@"X"] doubleValue],[b[@"Y"] doubleValue],
           [b[@"Width"] doubleValue],[b[@"Height"] doubleValue],t.UTF8String);
       }
       return 0;
     }
-    fprintf(stderr,"usage: spacesctl current | window <id> | move <id> <desktop> | find [owner]\n");
+    if([cmd isEqual:@"spaces"]){  // list ALL windows (any Space) for owner: windowID<TAB>spaceIndex, without switching Spaces
+      NSString* owner = argc>=3 ? @(argv[2]) : @"iTerm2";
+      CFArrayRef info=CGWindowListCopyWindowInfo(kCGWindowListOptionAll|kCGWindowListExcludeDesktopElements,kCGNullWindowID);
+      for(NSDictionary* w in (__bridge_transfer NSArray*)info){
+        if(![w[(id)kCGWindowOwnerName] isEqual:owner]) continue;
+        int wid=[w[(id)kCGWindowNumber] intValue];
+        CFArrayRef wids=(__bridge CFArrayRef)@[@(wid)];
+        NSArray* sp=(__bridge_transfer NSArray*)CGSCopySpacesForWindows(c,0x7 /* kCGSAllSpacesMask */,wids);
+        int spaceIdx = sp.count ? indexForSpace(disp,[sp.firstObject unsignedLongLongValue]) : -1;
+        printf("%d\t%d\n",wid,spaceIdx);
+      }
+      return 0;
+    }
+    fprintf(stderr,"usage: spacesctl current | window <id> | move <id> <desktop> | find [owner] | spaces [owner]\n");
     return 2;
   }
 }
