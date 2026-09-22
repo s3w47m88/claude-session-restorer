@@ -45,7 +45,7 @@ struct ContentView: View {
             }
             .padding(20)
         }
-        .frame(minWidth: 460, minHeight: 580)
+        .frame(minWidth: 620, minHeight: 480)
         .onAppear {
             runner.requestNotificationPermission()
             store.reload()
@@ -196,47 +196,45 @@ struct ContentView: View {
             Toggle("Also restore browser windows", isOn: $restoreBrowser)
                 .help("When on, Restore Now also reopens your browser windows and tabs from the last snapshot, alongside the Claude Code sessions. When off, only the Claude Code sessions are restored.")
 
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack {
-                    if !store.projects.isEmpty {
-                        Button {
-                            showSessionPicker.toggle()
-                        } label: {
-                            Label(showSessionPicker ? "Hide sessions" : "Choose sessions", systemImage: "checkmark.circle")
-                        }
-                        .disabled(runner.isRunning)
-                        .help("Shows or hides the list of captured Claude Code sessions above, where you can check or uncheck which ones to restore. Nothing is restored or changed by opening this list.")
-                    }
-
+            HStack(spacing: 8) {
+                if !store.projects.isEmpty {
                     Button {
-                        runner.restoreNow(includeBrowser: restoreBrowser, selectedSessions: Array(selectedSessions))
+                        showSessionPicker.toggle()
                     } label: {
-                        Label("Restore Now", systemImage: "play.fill")
-                    }
-                    .disabled(runner.isRunning || selectedSessions.isEmpty)
-                    .help("Reopens iTerm windows, tabs, and the checked Claude Code sessions from your last snapshot, resuming each one where it left off. This can take a few minutes; watch the progress bar above or the menu-bar icon.")
-
-                    Button {
-                        runner.snapshotNow { store.reload() }
-                    } label: {
-                        Label("Snapshot Now", systemImage: "camera.fill")
+                        Label(showSessionPicker ? "Hide sessions" : "Choose sessions", systemImage: "checkmark.circle")
                     }
                     .disabled(runner.isRunning)
-                    .help("Records your open iTerm windows, tabs and Claude sessions to disk. Nothing on screen changes; the 'Last snapshot' section above updates when it finishes.")
+                    .help("Shows or hides the list of captured Claude Code sessions above, where you can check or uncheck which ones to restore. Nothing is restored or changed by opening this list.")
+                }
 
-                    Button {
-                        runner.runInstaller()
-                    } label: {
-                        Label("Run installer / repair", systemImage: "wrench.and.screwdriver")
-                    }
-                    .disabled(runner.isRunning)
-                    .help("Reinstalls or repairs the background scripts this app relies on, for when a Restore or Snapshot has started failing. It does not touch your iTerm windows or Claude sessions.")
+                Button {
+                    runner.restoreNow(includeBrowser: restoreBrowser, selectedSessions: Array(selectedSessions))
+                } label: {
+                    Label("Restore Now", systemImage: "play.fill")
+                }
+                .disabled(runner.isRunning || selectedSessions.isEmpty)
+                .help("Reopens iTerm windows, tabs, and the checked Claude Code sessions from your last snapshot, resuming each one where it left off. This can take a few minutes; watch the progress bar above or the menu-bar icon.")
 
-                    Spacer()
+                Button {
+                    runner.snapshotNow { store.reload() }
+                } label: {
+                    Label("Snapshot Now", systemImage: "camera.fill")
+                }
+                .disabled(runner.isRunning)
+                .help("Records your open iTerm windows, tabs and Claude sessions to disk. Nothing on screen changes; the 'Last snapshot' section above updates when it finishes.")
 
-                    if runner.isRunning {
-                        ProgressView().controlSize(.small)
-                    }
+                Button {
+                    runner.runInstaller()
+                } label: {
+                    Label("Run installer / repair", systemImage: "wrench.and.screwdriver")
+                }
+                .disabled(runner.isRunning)
+                .help("Reinstalls or repairs the background scripts this app relies on, for when a Restore or Snapshot has started failing. It does not touch your iTerm windows or Claude sessions.")
+
+                Spacer()
+
+                if runner.isRunning {
+                    ProgressView().controlSize(.small)
                 }
             }
         }

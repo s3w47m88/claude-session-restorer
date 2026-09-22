@@ -13,7 +13,9 @@ struct RestoreAIWindowsApp: App {
                 .environmentObject(runner)
                 .environmentObject(progress)
         }
-        .windowResizability(.contentSize)
+        // Deliberately resizable: pinned to the content size the window grew
+        // taller than the screen and the scroll view had nothing left to scroll.
+        .defaultSize(width: 660, height: 760)
 
         MenuBarExtra("Restore AI Windows", systemImage: "arrow.triangle.2.circlepath") {
             // No blind "Restore Now" here: restoring everything is the expensive
