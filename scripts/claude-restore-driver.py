@@ -126,8 +126,10 @@ def build_cmd(sdef):
     name = sdef.get("name") or ""
     if name:
         parts.append(_osc(1, name))  # OSC 1: tab/icon title == captured session name
-    cwd = sdef["cwd"]
     sid = sdef.get("claude_session_id")
+    # --resume resolves the id against the project dir for the shell's cwd, and
+    # a session launched above its working directory is only found from there.
+    cwd = (sdef.get("resume_cwd") if sid else None) or sdef["cwd"]
     claude_cmd = f"claude --resume {shlex.quote(sid)}" if sid else "claude"
     parts.append(f"cd {shlex.quote(cwd)} && {claude_cmd}")
     return "; ".join(parts)
