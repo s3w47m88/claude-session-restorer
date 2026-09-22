@@ -254,5 +254,70 @@ class MissionReminder(unittest.TestCase):
         self.assertFalse((driver.mission_reminder(None) or "").strip())
 
 
+
+class TranscriptLookupAcrossProjects(unittest.TestCase):
+    """A session launched above its working directory keeps its transcript in
+    the launch directory's project folder. Looking only where the pane sits
+    now threw away a valid tag and lost the session."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self._orig = snapshot.PROJECTS_DIR
+        snapshot.PROJECTS_DIR = self.tmp.name
+        self.addCleanup(lambda: setattr(snapshot, "PROJECTS_DIR", self._orig))
+        self.launched_in = "/srv/Sites"
+        self.now_in = "/srv/Sites/one-project"
+        d = os.path.join(self.tmp.name, snapshot.slug_for_cwd(self.launched_in))
+        os.makedirs(d)
+        with open(os.path.join(d, "sid-1.jsonl"), "w") as fh:
+            fh.write(json.dumps({"type": "mode", "sessionId": "sid-1"}) + "\n")
+            fh.write(json.dumps({"type": "user", "cwd": self.launched_in,
+                                 "timestamp": "2026-09-21T12:00:00Z"}) + "\n")
+            fh.write(json.dumps({"type": "user", "cwd": self.now_in,
+                                 "timestamp": "2026-09-21T12:30:00Z"}) + "\n")
+
+    def test_found_from_a_subdirectory(self):
+        self.assertIsNotNone(snapshot.find_transcript("sid-1", self.now_in))
+
+    def test_a_valid_tag_is_not_treated_as_stale(self):
+        self.assertTrue(snapshot.transcript_exists("sid-1", self.now_in))
+
+    def test_a_genuinely_missing_transcript_still_reads_as_stale(self):
+        self.assertFalse(snapshot.transcript_exists("gone", self.now_in))
+
+    def test_resume_dir_is_where_claude_was_launched(self):
+        self.assertEqual(
+            snapshot.resume_cwd_for("sid-1", self.now_in), self.launched_in
+        )
+
+    def test_unknown_session_falls_back_to_the_pane_cwd(self):
+        self.assertEqual(snapshot.resume_cwd_for("gone", self.now_in), self.now_in)
+
+
+class ResumeDirectory(unittest.TestCase):
+    def test_restore_cds_to_the_launch_dir_not_the_pane_cwd(self):
+        cmd = driver.build_cmd({
+            "name": "x", "badge": "", "cwd": "/srv/Sites/one-project",
+            "resume_cwd": "/srv/Sites", "claude_session_id": "sid-1",
+        })
+        self.assertIn("cd /srv/Sites &&", cmd)
+
+    def test_a_fresh_session_still_opens_in_its_own_cwd(self):
+        cmd = driver.build_cmd({
+            "name": "x", "badge": "", "cwd": "/srv/Sites/one-project",
+            "resume_cwd": "/srv/Sites", "claude_session_id": None,
+        })
+        self.assertIn("cd /srv/Sites/one-project &&", cmd)
+
+    def test_captures_without_resume_cwd_still_work(self):
+        cmd = driver.build_cmd({
+            "name": "x", "badge": "", "cwd": "/srv/Sites/one-project",
+            "claude_session_id": "sid-1",
+        })
+        self.assertIn("cd /srv/Sites/one-project &&", cmd)
+
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

@@ -174,10 +174,9 @@ def mission_for_session(session_id, cwd):
         return None
     if session_id in _mission_cache:
         return _mission_cache[session_id]
-    slug = slug_for_cwd(cwd)
-    path = os.path.join(PROJECTS_DIR, slug, f"{session_id}.jsonl")
+    path = find_transcript(session_id, cwd)
     mission = None
-    if os.path.isfile(path):
+    if path:
         try:
             with open(path, "r", errors="ignore") as fh:
                 for line in fh:
@@ -290,10 +289,59 @@ def _slug_transcripts(slug):
     return rows
 
 
+def find_transcript(session_id, cwd=None):
+    """Path to a session's transcript, or None.
+
+    A transcript lives under the directory `claude` was launched from, which is
+    not always the pane's cwd — cd into a subdirectory and the two diverge. Try
+    the pane's slug first, then every project directory, so a still-valid tag
+    is never mistaken for a stale one."""
+    if not session_id:
+        return None
+    name = f"{session_id}.jsonl"
+    if cwd:
+        direct = os.path.join(PROJECTS_DIR, slug_for_cwd(cwd), name)
+        if os.path.isfile(direct):
+            return direct
+    try:
+        entries = os.listdir(PROJECTS_DIR)
+    except OSError:
+        return None
+    for slug in entries:
+        path = os.path.join(PROJECTS_DIR, slug, name)
+        if os.path.isfile(path):
+            return path
+    return None
+
+
 def transcript_exists(session_id, cwd):
-    return os.path.isfile(
-        os.path.join(PROJECTS_DIR, slug_for_cwd(cwd), f"{session_id}.jsonl")
-    )
+    return find_transcript(session_id, cwd) is not None
+
+
+def resume_cwd_for(session_id, cwd):
+    """The directory `claude --resume <id>` must run from.
+
+    Resume resolves the id against the project directory for the shell's cwd,
+    so restoring into the pane's last cwd can miss a session that was launched
+    somewhere else. The transcript records where it started; use that."""
+    path = find_transcript(session_id, cwd)
+    if not path:
+        return cwd
+    try:
+        with open(path, "r", errors="ignore") as fh:
+            for _ in range(200):
+                line = fh.readline()
+                if not line:
+                    break
+                try:
+                    rec = json.loads(line)
+                except ValueError:
+                    continue
+                if isinstance(rec, dict) and rec.get("cwd"):
+                    return rec["cwd"]
+    except OSError:
+        pass
+    return cwd
 
 
 def tag_session(tty, session_id, cwd):
@@ -487,6 +535,7 @@ def parse_dump(raw):
                     "cwd": cwd,
                     "claude_session_id": claude_session_id,
                     "session_id_source": session_id_source,
+                    "resume_cwd": resume_cwd_for(claude_session_id, cwd),
                     "claude_running": claude_running,
                     "mission": mission,
                 })
