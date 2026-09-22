@@ -21,13 +21,17 @@ Run:    python3 claude-restore-driver.py [windows.json] [--dry-run]
 Env:    RESTORE_SESSION_FILTER=id1,id2,...  -> only restore these claude_session_ids
         (sessions with no claude_session_id are never filtered out by this)
 """
-import asyncio, base64, json, os, re, shlex, sys, subprocess
+import asyncio, base64, json, os, re, shlex, sys, subprocess, tempfile
+from datetime import datetime
 
 HOME = os.path.expanduser("~")
 SCRIPTS = os.path.join(HOME, ".claude", "scripts")
 STATE = os.path.join(HOME, ".claude", "session-state")
 SPACESCTL = os.path.join(SCRIPTS, "spacesctl", "spacesctl")
 CONT_FILE = os.path.join(SCRIPTS, "continue-prompt.txt")
+PROGRESS_JSON = os.path.join(STATE, "restore-progress.json")
+# How many sessions may be booting and thinking at once.
+CONCURRENCY = max(1, int(os.environ.get("RESTORE_CONCURRENCY", "3")))
 HANDOFF_DIR = os.path.join(HOME, ".claude", "handoffs")
 
 ARGS = [a for a in sys.argv[1:] if not a.startswith("--")]
@@ -79,6 +83,31 @@ def mission_reminder(mission):
     if not mission:
         return ""
     return f"Reminder of what you were working on in this session: {mission}"
+
+
+class _null_gate:
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc):
+        return False
+
+
+def _now():
+    return datetime.now().astimezone().replace(microsecond=0).isoformat()
+
+
+def count_sessions(windows):
+    """Sessions the run will actually drive, so the bar is determinate from the start."""
+    n = 0
+    for w in windows:
+        for t in w.get("tabs", []):
+            for s in t.get("sessions", []):
+                sid = s.get("claude_session_id")
+                if SESSION_FILTER and sid not in SESSION_FILTER and sid is not None:
+                    continue
+                n += 1
+    return n
 
 
 def load_windows(path):
@@ -143,46 +172,72 @@ async def screen_text(session):
         return ""
 
 
-async def drive_session(session, prompt, cwd, mission, log):
-    """Auto-answer every reopen prompt, then inject handoff + mission reminder + continuation prompt."""
+async def send_message(session, text):
+    """Type one message into Claude's input box and submit it.
+
+    A newline inside the text does not submit — Claude Code adds a line to the
+    draft instead — and an Enter arriving in the same write as a long paste is
+    swallowed with it. So flatten to a single line, let the paste settle, then
+    send Enter on its own. This is why restored windows used to sit with their
+    message typed but never sent."""
+    one_line = " ".join(text.split())
+    if not one_line:
+        return False
+    await session.async_send_text(one_line)
+    await asyncio.sleep(0.6)
+    await session.async_send_text("\r")
+    await asyncio.sleep(0.4)
+    return True
+
+
+def compose_message(handoff, reminder, prompt):
+    """Handoff, mission reminder and continuation prompt as one submittable message."""
+    return "  ".join(p for p in (handoff, reminder, prompt) if p)
+
+
+async def drive_session(session, prompt, cwd, mission, log, on_ready=None, gate=None):
+    """Auto-answer every reopen prompt, then send the handoff + mission + continuation as one message."""
     answered = set()
     sent = False
     handoff = load_handoff(cwd) if cwd else ""
     reminder = mission_reminder(mission)
-    for _ in range(180):  # up to ~3 min
-        txt = await screen_text(session)
-        low = txt.lower()
-        fired = False
-        for trigger, keys, desc in PROMPT_HANDLERS:
-            if trigger in answered:
+    payload = compose_message(handoff, reminder, prompt)
+    if gate is None:
+        gate = _null_gate()
+    # Every resumed session starts working the moment it is prompted, and each
+    # one animates while it thinks. Prompting all of them at once pins iTerm and
+    # WindowServer for as long as the slowest takes; the gate spreads that out.
+    async with gate:
+        for _ in range(180):  # up to ~3 min
+            txt = await screen_text(session)
+            low = txt.lower()
+            fired = False
+            for trigger, keys, desc in PROMPT_HANDLERS:
+                if trigger in answered:
+                    continue
+                if trigger in low:
+                    await session.async_send_text(keys)
+                    answered.add(trigger)
+                    log(f"answered: {desc}")
+                    await asyncio.sleep(1.5)
+                    fired = True
+                    break
+            if fired:
                 continue
-            if trigger in low:
-                await session.async_send_text(keys)
-                answered.add(trigger)
-                log(f"answered: {desc}")
-                await asyncio.sleep(1.5)
-                fired = True
-                break
-        if fired:
-            continue
-        if not sent and any(m in low for m in READY_MARKERS):
-            await asyncio.sleep(1.0)
-            if handoff:
-                await session.async_send_text(handoff + "\r"); await asyncio.sleep(0.5)
-            if reminder:
-                await session.async_send_text(reminder + "\r"); await asyncio.sleep(0.5)
-            await session.async_send_text(prompt + "\r")
-            sent = True
-            log("sent mission reminder + continuation prompt")
-            return True
-        await asyncio.sleep(1)
-    if not sent:  # fallback: send anyway so nothing is silently dropped
-        if handoff:
-            await session.async_send_text(handoff + "\r"); await asyncio.sleep(0.5)
-        if reminder:
-            await session.async_send_text(reminder + "\r"); await asyncio.sleep(0.5)
-        await session.async_send_text(prompt + "\r")
-        log("timed out waiting for ready marker; sent prompt anyway")
+            if not sent and any(m in low for m in READY_MARKERS):
+                await asyncio.sleep(1.0)
+                await send_message(session, payload)
+                sent = True
+                log("sent mission reminder + continuation prompt")
+                if on_ready:
+                    on_ready()
+                return True
+            await asyncio.sleep(1)
+        if not sent:  # fallback: send anyway so nothing is silently dropped
+            await send_message(session, payload)
+            log("timed out waiting for ready marker; sent prompt anyway")
+            if on_ready:
+                on_ready()
     return sent
 
 
@@ -251,6 +306,58 @@ def build_plan(windows):
     return lines
 
 
+class Progress:
+    """Writes restore-progress.json for the app and the menu bar. See PROGRESS_SCHEMA.md."""
+
+    def __init__(self, total_windows, total_sessions):
+        self.data = {
+            "state": "running",
+            "started_at": _now(),
+            "updated_at": _now(),
+            "finished_at": None,
+            "total_windows": total_windows,
+            "total_sessions": total_sessions,
+            "opened_windows": 0,
+            "ready_sessions": 0,
+            "current": "starting",
+            "error": None,
+        }
+        self.write()
+
+    def write(self):
+        self.data["updated_at"] = _now()
+        try:
+            os.makedirs(STATE, exist_ok=True)
+            fd, tmp = tempfile.mkstemp(dir=STATE, suffix=".tmp")
+            with os.fdopen(fd, "w") as fh:
+                json.dump(self.data, fh, indent=2)
+            os.replace(tmp, PROGRESS_JSON)
+        except OSError:
+            pass
+
+    def update(self, **fields):
+        self.data.update(fields)
+        self.write()
+
+    def window_opened(self, wi, title):
+        self.data["opened_windows"] = wi
+        self.update(current=f"window {wi} of {self.data['total_windows']}"
+                            + (f" — {title}" if title else ""))
+
+    def session_ready(self):
+        self.data["ready_sessions"] += 1
+        d = self.data
+        self.update(current=f"{d['ready_sessions']} of {d['total_sessions']} sessions resumed")
+
+    def finish(self, error=None):
+        self.data["finished_at"] = _now()
+        self.update(
+            state="failed" if error else "done",
+            error=str(error) if error else None,
+            current=str(error) if error else "restore complete",
+        )
+
+
 async def main(connection):
     import iterm2
     app = await iterm2.async_get_app(connection)
@@ -259,6 +366,9 @@ async def main(connection):
 
     all_cwds = [s.get("cwd") for w in windows for t in w.get("tabs", []) for s in t.get("sessions", [])]
     preseed_trust(all_cwds)
+
+    progress = Progress(len(windows), count_sessions(windows))
+    gate = asyncio.Semaphore(CONCURRENCY)
 
     drivers = []
     for wi, w in enumerate(windows, 1):
@@ -278,16 +388,23 @@ async def main(connection):
                     await sess.async_send_text(_osc(2, w["title"]) + "\n")  # OSC 2: window title
                     window_title_set = True
                 log = lambda msg, wi=wi, ti=ti, si=si: print(f"[window {wi}][tab {ti+1}][session {si+1}] {msg}")
-                drivers.append(drive_session(sess, prompt, sdef.get("cwd"), sdef.get("mission"), log))
+                drivers.append(drive_session(sess, prompt, sdef.get("cwd"), sdef.get("mission"),
+                                             log, progress.session_ready, gate))
                 await asyncio.sleep(0.3)
             if tdef.get("title"):
                 # last-written OSC1 wins per tab; re-assert the captured tab title
                 await tab.sessions[-1].async_send_text(_osc(1, tdef["title"]) + "\n")
         await apply_geometry(iterm_win, w.get("frame"), w.get("space"))
         print(f"[window {wi}] opened: {len(tabs)} tab(s)")
+        progress.window_opened(wi, w.get("title"))
         await asyncio.sleep(0.4)
 
-    await asyncio.gather(*drivers)
+    try:
+        await asyncio.gather(*drivers)
+    except Exception as e:
+        progress.finish(error=e)
+        raise
+    progress.finish()
     print(f"done: {len(windows)} window(s)")
 
 
