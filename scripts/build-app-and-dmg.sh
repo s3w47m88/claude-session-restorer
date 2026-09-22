@@ -4,7 +4,7 @@
 # Usage:
 #   bash scripts/build-app-and-dmg.sh [VERSION]
 #
-# Default VERSION is 1.0.0. Creates:
+# Default VERSION is 1.1.0. Creates:
 #   dist/Restore AI Windows.app/
 #   dist/RestoreAIWindows-<VERSION>.dmg
 #
@@ -13,7 +13,7 @@
 
 set -e
 
-VERSION="${1:-1.0.0}"
+VERSION="${1:-1.1.0}"
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 MACOS_DIR="$REPO_ROOT/macos"
 DIST_DIR="$REPO_ROOT/dist"
