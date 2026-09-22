@@ -31,9 +31,16 @@ jobs:
       - name: Build app and DMG
         run: bash scripts/build-app-and-dmg.sh ${{ steps.version.outputs.version }}
 
+      # A version-less copy gives the website a download link that never goes stale:
+      # releases/latest/download/RestoreAIWindows.dmg
+      - name: Add stable-named DMG
+        run: cp "dist/RestoreAIWindows-${{ steps.version.outputs.version }}.dmg" dist/RestoreAIWindows.dmg
+
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
+          name: TPC Restore AI Windows ${{ github.ref_name }}
+          body_path: .github/release-notes/${{ github.ref_name }}.md
           files: dist/*.dmg
           draft: false
           prerelease: false
