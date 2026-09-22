@@ -30,7 +30,13 @@ struct RestoreAIWindowsApp: App {
 
         // Temporary menu-bar item, visible only while a restore is running, so
         // progress is visible without the app window focused.
-        MenuBarExtra(isInserted: $progress.isVisible) {
+        //
+        // `isInserted` takes a read-only binding on purpose. Handing it a
+        // writable one (`$progress.isVisible`) let SwiftUI write back into the
+        // published property while rendering, which spun the view graph in an
+        // endless "AttributeGraph: cycle detected" loop: the window stopped
+        // scrolling and resizing, and the app burned CPU doing nothing.
+        MenuBarExtra(isInserted: .constant(progress.isVisible)) {
             Text(progress.current)
             Text("\(Int(progress.fraction * 100))% complete")
         } label: {
