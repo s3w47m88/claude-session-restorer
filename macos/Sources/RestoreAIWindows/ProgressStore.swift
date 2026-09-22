@@ -46,8 +46,16 @@ final class ProgressStore: ObservableObject {
     @Published var fraction: Double = 0
     @Published var current: String = ""
 
+    /// Watching starts with the object, not from the App's `init()`: reaching
+    /// into a `@StateObject`'s `wrappedValue` before SwiftUI installs it builds
+    /// a throwaway instance (and left the app with no window at all).
+    init() {
+        startWatching()
+    }
+
     private var watcher: DispatchSourceFileSystemObject?
     private var watchedFD: Int32 = -1
+    private var sweep: Timer?
     private static let staleAfter: TimeInterval = 5 * 60
 
     private var path: URL {
@@ -75,10 +83,19 @@ final class ProgressStore: ObservableObject {
         }
         source.resume()
         watcher = source
+
+        // A killed driver writes no terminal state and fires no more events, so
+        // nothing would ever retire a stuck bar. Re-check on a slow timer too.
+        sweep?.invalidate()
+        sweep = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { _ in
+            Task { @MainActor [weak self] in self?.reload() }
+        }
         reload()
     }
 
     func stopWatching() {
+        sweep?.invalidate()
+        sweep = nil
         watcher?.cancel()
         watcher = nil
         watchedFD = -1
