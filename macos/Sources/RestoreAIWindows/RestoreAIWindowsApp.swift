@@ -6,12 +6,6 @@ struct RestoreAIWindowsApp: App {
     @StateObject private var runner = ActionRunner()
     @StateObject private var progress = ProgressStore()
 
-    init() {
-        // Watched for the app's whole lifetime, not just while the window is
-        // open, so the temporary menu-bar item works with the window closed.
-        _progress.wrappedValue.startWatching()
-    }
-
     var body: some Scene {
         WindowGroup("Restore AI Windows") {
             ContentView()
