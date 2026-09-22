@@ -10,6 +10,7 @@ window/tab structure the driver plans from a capture.
     python3 tests/test_snapshot_restore.py
 """
 
+import asyncio
 import importlib.util
 import json
 import os
@@ -316,6 +317,148 @@ class ResumeDirectory(unittest.TestCase):
             "claude_session_id": "sid-1",
         })
         self.assertIn("cd /srv/Sites/one-project &&", cmd)
+
+
+
+
+class Submitting(unittest.TestCase):
+    """Restored windows opened with their message typed into the box but never
+    sent: the Enter travelled in the same write as the paste, and the handoff's
+    own newlines only added lines to the draft."""
+
+    class FakeSession:
+        def __init__(self):
+            self.writes = []
+
+        async def async_send_text(self, text):
+            self.writes.append(text)
+
+    def send(self, text):
+        sess = self.FakeSession()
+        asyncio.run(driver.send_message(sess, text))
+        return sess.writes
+
+    def test_enter_is_a_separate_write(self):
+        writes = self.send("continue where you left off")
+        self.assertEqual(len(writes), 2)
+        self.assertEqual(writes[1], "\r")
+
+    def test_the_message_carries_no_newline(self):
+        writes = self.send("line one\nline two\n\nline three")
+        self.assertNotIn("\n", writes[0])
+        self.assertEqual(writes[0], "line one line two line three")
+
+    def test_nothing_is_sent_for_an_empty_message(self):
+        self.assertEqual(self.send("   \n  "), [])
+
+    def test_handoff_mission_and_prompt_go_out_as_one_message(self):
+        msg = driver.compose_message("handoff text", "reminder text", "continue")
+        self.assertEqual(len(self.send(msg)), 2)
+        for part in ("handoff text", "reminder text", "continue"):
+            self.assertIn(part, msg)
+
+    def test_missing_parts_are_skipped(self):
+        self.assertEqual(driver.compose_message("", "", "continue"), "continue")
+
+
+class ProgressFile(unittest.TestCase):
+    """The app and the menu bar read this file; a restore with no progress file
+    is indistinguishable from a hung one."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self._state, self._json = driver.STATE, driver.PROGRESS_JSON
+        driver.STATE = self.tmp.name
+        driver.PROGRESS_JSON = os.path.join(self.tmp.name, "restore-progress.json")
+        self.addCleanup(lambda: (setattr(driver, "STATE", self._state),
+                                 setattr(driver, "PROGRESS_JSON", self._json)))
+
+    def read(self):
+        with open(driver.PROGRESS_JSON) as fh:
+            return json.load(fh)
+
+    def test_totals_are_known_before_the_first_window(self):
+        driver.Progress(7, 9)
+        d = self.read()
+        self.assertEqual((d["total_windows"], d["total_sessions"]), (7, 9))
+        self.assertEqual((d["opened_windows"], d["ready_sessions"]), (0, 0))
+        self.assertEqual(d["state"], "running")
+
+    def test_counters_advance(self):
+        p = driver.Progress(2, 3)
+        p.window_opened(1, "Politogy")
+        self.assertIn("Politogy", self.read()["current"])
+        p.session_ready()
+        d = self.read()
+        self.assertEqual(d["opened_windows"], 1)
+        self.assertEqual(d["ready_sessions"], 1)
+        self.assertIn("1 of 3", d["current"])
+
+    def test_finishing_is_terminal_and_stamped(self):
+        p = driver.Progress(1, 1)
+        p.finish()
+        d = self.read()
+        self.assertEqual(d["state"], "done")
+        self.assertIsNotNone(d["finished_at"])
+        self.assertIsNone(d["error"])
+
+    def test_failure_records_the_reason(self):
+        p = driver.Progress(1, 1)
+        p.finish(error=RuntimeError("iTerm went away"))
+        d = self.read()
+        self.assertEqual(d["state"], "failed")
+        self.assertIn("iTerm went away", d["error"])
+
+    def test_session_count_respects_the_filter(self):
+        windows = PlannedStructure.CAPTURE["windows"]
+        self.assertEqual(driver.count_sessions(windows), 3)
+
+
+
+
+class ResumeConcurrency(unittest.TestCase):
+    """Prompting every restored session at once pins iTerm and WindowServer
+    until the slowest one finishes thinking."""
+
+    class FakeSession:
+        def __init__(self, ready_after=0):
+            self.writes = []
+            self.reads = 0
+            self.ready_after = ready_after
+
+        async def async_get_screen_contents(self):
+            raise NotImplementedError
+
+        async def async_send_text(self, text):
+            self.writes.append(text)
+
+    def test_only_the_allowed_number_run_at_once(self):
+        gate = asyncio.Semaphore(2)
+        live, peak = 0, 0
+
+        async def worker():
+            nonlocal live, peak
+            async with gate:
+                live += 1
+                peak = max(peak, live)
+                await asyncio.sleep(0.02)
+                live -= 1
+
+        async def run():
+            await asyncio.gather(*(worker() for _ in range(6)))
+
+        asyncio.run(run())
+        self.assertEqual(peak, 2)
+
+    def test_concurrency_is_at_least_one(self):
+        self.assertGreaterEqual(driver.CONCURRENCY, 1)
+
+    def test_an_ungated_call_still_works(self):
+        async def run():
+            async with driver._null_gate():
+                return "ran"
+        self.assertEqual(asyncio.run(run()), "ran")
 
 
 

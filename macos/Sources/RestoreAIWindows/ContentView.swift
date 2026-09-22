@@ -3,6 +3,7 @@ import SwiftUI
 struct ContentView: View {
     @EnvironmentObject var store: SnapshotStore
     @EnvironmentObject var runner: ActionRunner
+    @EnvironmentObject var progress: ProgressStore
     @AppStorage("restoreBrowserWindows") private var restoreBrowser = true
     @State private var selectedSessions: Set<String> = []
     @State private var showSessionPicker = true
@@ -11,6 +12,12 @@ struct ContentView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 header
+
+                if progress.isVisible {
+                    GroupBox("Restore in progress") {
+                        restoreProgress
+                    }
+                }
 
                 GroupBox("Last snapshot") {
                     snapshotSummary
@@ -66,6 +73,15 @@ struct ContentView: View {
                     .foregroundStyle(.secondary)
             }
             Spacer()
+        }
+    }
+
+    private var restoreProgress: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            ProgressView(value: progress.fraction)
+            Text(progress.current)
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
     }
 
@@ -170,6 +186,7 @@ struct ContentView: View {
             Spacer()
             if !granted {
                 Button("Open Settings", action: openSettings)
+                    .help("Opens System Settings to the \(name) page so you can grant this app access. Nothing is restored or changed until you flip the switch there yourself.")
             }
         }
     }
@@ -177,44 +194,51 @@ struct ContentView: View {
     private var actions: some View {
         VStack(alignment: .leading, spacing: 12) {
             Toggle("Also restore browser windows", isOn: $restoreBrowser)
+                .help("When on, Restore Now also reopens your browser windows and tabs from the last snapshot, alongside the Claude Code sessions. When off, only the Claude Code sessions are restored.")
 
-            HStack {
-                if !store.projects.isEmpty {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack {
+                    if !store.projects.isEmpty {
+                        Button {
+                            showSessionPicker.toggle()
+                        } label: {
+                            Label(showSessionPicker ? "Hide sessions" : "Choose sessions", systemImage: "checkmark.circle")
+                        }
+                        .disabled(runner.isRunning)
+                        .help("Shows or hides the list of captured Claude Code sessions above, where you can check or uncheck which ones to restore. Nothing is restored or changed by opening this list.")
+                    }
+
                     Button {
-                        showSessionPicker.toggle()
+                        runner.restoreNow(includeBrowser: restoreBrowser, selectedSessions: Array(selectedSessions))
                     } label: {
-                        Label(showSessionPicker ? "Hide sessions" : "Choose sessions", systemImage: "checkmark.circle")
+                        Label("Restore Now", systemImage: "play.fill")
+                    }
+                    .disabled(runner.isRunning || selectedSessions.isEmpty)
+                    .help("Reopens iTerm windows, tabs, and the checked Claude Code sessions from your last snapshot, resuming each one where it left off. This can take a few minutes; watch the progress bar above or the menu-bar icon.")
+
+                    Button {
+                        runner.snapshotNow { store.reload() }
+                    } label: {
+                        Label("Snapshot Now", systemImage: "camera.fill")
                     }
                     .disabled(runner.isRunning)
-                }
+                    .help("Records your open iTerm windows, tabs and Claude sessions to disk. Nothing on screen changes; the 'Last snapshot' section above updates when it finishes.")
 
-                Button {
-                    runner.restoreNow(includeBrowser: restoreBrowser, selectedSessions: Array(selectedSessions))
-                } label: {
-                    Label("Restore Now", systemImage: "play.fill")
-                }
-                .disabled(runner.isRunning || selectedSessions.isEmpty)
+                    Button {
+                        runner.runInstaller()
+                    } label: {
+                        Label("Run installer / repair", systemImage: "wrench.and.screwdriver")
+                    }
+                    .disabled(runner.isRunning)
+                    .help("Reinstalls or repairs the background scripts this app relies on, for when a Restore or Snapshot has started failing. It does not touch your iTerm windows or Claude sessions.")
 
-                Button {
-                    runner.snapshotNow { store.reload() }
-                } label: {
-                    Label("Snapshot Now", systemImage: "camera.fill")
-                }
-                .disabled(runner.isRunning)
+                    Spacer()
 
-                Spacer()
-
-                if runner.isRunning {
-                    ProgressView().controlSize(.small)
+                    if runner.isRunning {
+                        ProgressView().controlSize(.small)
+                    }
                 }
             }
-
-            Button {
-                runner.runInstaller()
-            } label: {
-                Label("Run installer / repair", systemImage: "wrench.and.screwdriver")
-            }
-            .disabled(runner.isRunning)
         }
     }
 }
