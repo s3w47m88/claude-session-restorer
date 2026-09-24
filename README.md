@@ -85,6 +85,10 @@ rm -rf "/Applications/Restore AI Windows.app" ~/.claude/skills/restore-claude-se
 # scripts in ~/.claude/scripts (incl. itermvenv) and state in ~/.claude/session-state can be removed too
 ```
 
+---
+
+More apps by Spencer Hill & The Portland Company — https://theportlandcompany.com/apps
+
 ## License
 
 MIT
