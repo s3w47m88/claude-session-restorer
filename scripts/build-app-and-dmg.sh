@@ -4,7 +4,7 @@
 # Usage:
 #   bash scripts/build-app-and-dmg.sh [VERSION]
 #
-# Default VERSION is 1.1.0. Creates:
+# Default VERSION is 1.2.0. Creates:
 #   dist/Restore AI Windows.app/
 #   dist/RestoreAIWindows-<VERSION>.dmg
 #
@@ -13,7 +13,7 @@
 
 set -e
 
-VERSION="${1:-1.1.0}"
+VERSION="${1:-1.2.0}"
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 MACOS_DIR="$REPO_ROOT/macos"
 DIST_DIR="$REPO_ROOT/dist"
@@ -54,7 +54,9 @@ ICONSET="/tmp/restore-ai-windows-iconset-$$"
 rm -rf "$ICONSET"
 mkdir -p "$ICONSET"
 
-if [ -f "$ASSETS_DIR/icon.png" ]; then
+if [ -f "$ASSETS_DIR/icon.icns" ]; then
+  cp "$ASSETS_DIR/icon.icns" "$APP_DIR/Contents/Resources/AppIcon.icns" && echo "✓ Icon copied: AppIcon.icns"
+elif [ -f "$ASSETS_DIR/icon.png" ]; then
   ICON_OK=true
   for size in 16 32 64 128 256 512; do
     sips -z $size $size "$ASSETS_DIR/icon.png" --out "$ICONSET/icon_${size}x${size}.png" >/dev/null 2>&1 || ICON_OK=false
@@ -164,6 +166,10 @@ if [ -n "$DEV_ID_CERT" ]; then
   if [ -n "${NOTARY_KEY:-}" ] && [ -n "${NOTARY_KEY_ID:-}" ] && [ -n "${NOTARY_ISSUER:-}" ]; then
     echo "✓ Notarization secrets found, notarizing…"
 
+    # notarytool needs a real file path; accept NOTARY_KEY as a path or the .p8 contents.
+    if [ -f "$NOTARY_KEY" ]; then NOTARY_KEY_FILE="$NOTARY_KEY"; else
+      NOTARY_KEY_FILE="$(mktemp -t notary-key).p8"; printf '%s\n' "$NOTARY_KEY" > "$NOTARY_KEY_FILE"; fi
+
     # Create a temporary zip for notarization
     NOTARY_ZIP="/tmp/restore-ai-windows-notary-$$.zip"
     ditto -c -k --sequesterRsrc "$APP_DIR" "$NOTARY_ZIP"
@@ -172,7 +178,7 @@ if [ -n "$DEV_ID_CERT" ]; then
     NOTARY_REQUEST=$(xcrun notarytool submit "$NOTARY_ZIP" \
       --key-id "$NOTARY_KEY_ID" \
       --issuer "$NOTARY_ISSUER" \
-      --key <(echo "$NOTARY_KEY") \
+      --key "$NOTARY_KEY_FILE" \
       --output-format json 2>/dev/null | jq -r '.id' || echo "")
 
     if [ -n "$NOTARY_REQUEST" ] && [ "$NOTARY_REQUEST" != "null" ]; then
@@ -183,7 +189,7 @@ if [ -n "$DEV_ID_CERT" ]; then
         STATUS=$(xcrun notarytool info "$NOTARY_REQUEST" \
           --key-id "$NOTARY_KEY_ID" \
           --issuer "$NOTARY_ISSUER" \
-          --key <(echo "$NOTARY_KEY") \
+          --key "$NOTARY_KEY_FILE" \
           --output-format json 2>/dev/null | jq -r '.status' || echo "")
 
         if [ "$STATUS" = "Accepted" ]; then

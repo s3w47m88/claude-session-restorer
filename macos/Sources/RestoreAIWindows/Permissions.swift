@@ -1,9 +1,25 @@
 import Foundation
 import CoreGraphics
 import AppKit
+import ApplicationServices
 
 enum Permissions {
-    /// Screen Recording is required for Space (virtual desktop) restore.
+    /// Accessibility lets restore switch desktops (Ctrl+Left/Right) so each window
+    /// opens on its original Space. macOS ignores direct window-to-Space moves.
+    static var accessibilityGranted: Bool {
+        AXIsProcessTrusted()
+    }
+
+    static func requestAccessibility() {
+        let key = kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String
+        _ = AXIsProcessTrustedWithOptions([key: true] as CFDictionary)
+    }
+
+    static func openAccessibilitySettings() {
+        openPane("x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")
+    }
+
+    /// Screen Recording lets window titles be read back; Space capture works without it.
     static var screenRecordingGranted: Bool {
         CGPreflightScreenCaptureAccess()
     }
