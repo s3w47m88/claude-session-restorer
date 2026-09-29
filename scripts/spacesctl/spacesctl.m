@@ -31,6 +31,9 @@ int main(int argc, char** argv){
       uint64_t cur=[disp.firstObject[@"Current Space"][@"ManagedSpaceID"] unsignedLongLongValue];
       printf("%d\n", indexForSpace(disp,cur)); return 0;
     }
+    if([cmd isEqual:@"mainh"]){  // primary display height, for Cocoa<->CG y flips
+      printf("%.0f\n", CGDisplayBounds(CGMainDisplayID()).size.height); return 0;
+    }
     if([cmd isEqual:@"window"] && argc>=3){
       CFArrayRef wids=(__bridge CFArrayRef)@[@(atoi(argv[2]))];
       NSArray* sp=(__bridge_transfer NSArray*)CGSCopySpacesForWindows(c,0x7,wids);
@@ -68,7 +71,7 @@ int main(int argc, char** argv){
       }
       return 0;
     }
-    fprintf(stderr,"usage: spacesctl current | window <id> | move <id> <desktop> | find [owner] | spaces [owner]\n");
+    fprintf(stderr,"usage: spacesctl current | mainh | window <id> | move <id> <desktop> | find [owner] | spaces [owner]\n");
     return 2;
   }
 }

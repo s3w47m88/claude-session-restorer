@@ -172,11 +172,16 @@ struct ContentView: View {
     private var permissionsList: some View {
         VStack(alignment: .leading, spacing: 10) {
             permissionRow(
+                name: "Accessibility",
+                detail: "needed to put restored windows back on their original desktop (Space)",
+                granted: Permissions.accessibilityGranted,
+                openSettings: Permissions.openAccessibilitySettings
+            )
+            permissionRow(
                 name: "Screen Recording",
-                // Space (virtual desktop) lookup uses a separate private API and works
-                // fine without this. Without it, only window TITLES read back empty —
-                // window ids and Spaces still resolve correctly.
-                detail: "needed to read window titles; Space (desktop) placement works either way",
+                // Space lookup uses a separate private API and works without this.
+                // Without it, only window TITLES read back empty.
+                detail: "needed to read window titles; not needed for desktop placement",
                 granted: Permissions.screenRecordingGranted,
                 openSettings: Permissions.openScreenRecordingSettings
             )

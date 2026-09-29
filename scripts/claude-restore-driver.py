@@ -241,38 +241,82 @@ async def drive_session(session, prompt, cwd, mission, log, on_ready=None, gate=
     return sent
 
 
-def cgwindow_for_frame(frame):
-    """Best-effort: match an iTerm CGWindowID by frame via spacesctl find (needs Screen Recording)."""
+def iterm_cgwindows():
+    """CGWindowIDs of every iTerm window on any Space (needs Screen Recording)."""
     try:
         out = subprocess.run([SPACESCTL, "find", "iTerm2"], capture_output=True, text=True, timeout=5).stdout
     except Exception:
+        return set()
+    return {int(line.split("\t")[0]) for line in out.splitlines() if line.split("\t")[0].isdigit()}
+
+
+def main_display_height():
+    try:
+        return float(subprocess.run([SPACESCTL, "mainh"], capture_output=True, text=True, timeout=5).stdout)
+    except Exception:
         return None
-    best = None
-    for line in out.splitlines():
-        f = line.split("\t")
-        if len(f) < 5:
-            continue
-        wid, x, y, w, h = int(f[0]), float(f[1]), float(f[2]), float(f[3]), float(f[4])
-        if abs(w - frame["w"]) < 40 and abs(h - frame["h"]) < 40:
-            best = wid
-    return best
 
 
-async def apply_geometry(win, frame, space):
+async def new_cgwindow(before):
+    """The CGWindowID that appeared since `before` was taken. Matching by size alone
+    picked whichever same-sized iTerm window came last and moved the wrong one."""
+    for _ in range(20):
+        fresh = iterm_cgwindows() - before
+        if len(fresh) == 1:
+            return fresh.pop()
+        await asyncio.sleep(0.1)
+    return None
+
+
+def current_space():
+    try:
+        return int(subprocess.run([SPACESCTL, "current"], capture_output=True, text=True, timeout=5).stdout)
+    except Exception:
+        return -1
+
+
+async def goto_space(space):
+    """Make `space` the active desktop so the next new window opens there.
+    macOS 14.5+ silently ignores CGSMoveWindowsToManagedSpace for another app's
+    windows, so moving after the fact never worked. Uses Ctrl+Left/Right via
+    System Events (needs Accessibility for the app running the restore)."""
+    if not space or space < 1 or not os.path.exists(SPACESCTL):
+        return False
+    for _ in range(20):
+        cur = current_space()
+        if cur == space:
+            return True
+        if cur < 1:
+            return False
+        key = 124 if space > cur else 123
+        subprocess.run(["osascript", "-e",
+                        f'tell application "System Events" to key code {key} using control down'],
+                       capture_output=True, timeout=5)
+        # Wait for this switch to land before the next press, or presses overshoot.
+        for _ in range(30):
+            await asyncio.sleep(0.1)
+            if current_space() != cur:
+                break
+        await asyncio.sleep(0.3)
+    return current_space() == space
+
+
+async def apply_geometry(win, frame, space, wid):
     import iterm2
     if frame:
+        # windows.json frames are top-left (AppleScript bounds); iTerm's API is
+        # Cocoa bottom-left, so flip y against the primary display.
+        mh = main_display_height()
         fr = await win.async_get_frame()
-        fr.origin.x = int(frame["x"]); fr.origin.y = int(frame["y"])
+        fr.origin.x = int(frame["x"])
+        fr.origin.y = int(mh - frame["y"] - frame["h"]) if mh else int(frame["y"])
         fr.size.width = int(frame["w"]); fr.size.height = int(frame["h"])
         await win.async_set_frame(fr)
-    if space and space > 0:
-        await asyncio.sleep(0.5)
-        wid = cgwindow_for_frame(frame) if frame else None
-        if wid and os.path.exists(SPACESCTL):
-            try:
-                subprocess.run([SPACESCTL, "move", str(wid), str(space)], timeout=5)
-            except Exception:
-                pass
+    if space and space > 0 and wid and os.path.exists(SPACESCTL):
+        try:
+            subprocess.run([SPACESCTL, "move", str(wid), str(space)], timeout=5)
+        except Exception:
+            pass
 
 
 def build_plan(windows):
@@ -371,8 +415,12 @@ async def main(connection):
     gate = asyncio.Semaphore(CONCURRENCY)
 
     drivers = []
+    home_space = current_space()
     for wi, w in enumerate(windows, 1):
+        await goto_space(w.get("space"))
+        before = iterm_cgwindows()
         iterm_win = await iterm2.Window.async_create(connection)
+        cg_wid = await new_cgwindow(before)
         tabs = sorted(w.get("tabs", []), key=lambda t: t["index"])
         window_title_set = False
         for ti, tdef in enumerate(tabs):
@@ -394,10 +442,11 @@ async def main(connection):
             if tdef.get("title"):
                 # last-written OSC1 wins per tab; re-assert the captured tab title
                 await tab.sessions[-1].async_send_text(_osc(1, tdef["title"]) + "\n")
-        await apply_geometry(iterm_win, w.get("frame"), w.get("space"))
+        await apply_geometry(iterm_win, w.get("frame"), w.get("space"), cg_wid)
         print(f"[window {wi}] opened: {len(tabs)} tab(s)")
         progress.window_opened(wi, w.get("title"))
         await asyncio.sleep(0.4)
+    await goto_space(home_space)
 
     try:
         await asyncio.gather(*drivers)
