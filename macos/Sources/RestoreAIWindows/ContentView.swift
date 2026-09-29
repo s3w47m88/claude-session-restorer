@@ -9,6 +9,7 @@ struct ContentView: View {
     @State private var showSessionPicker = true
 
     var body: some View {
+        VStack(spacing: 0) {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 header
@@ -43,21 +44,23 @@ struct ContentView: View {
                         .foregroundStyle(runner.lastFailed ? .red : .green)
                 }
 
-                Divider()
-                    .padding(.vertical, 8)
-
-                Link(destination: URL(string: "https://theportlandcompany.com/apps")!) {
-                    HStack(spacing: 4) {
-                        Image(systemName: "square.grid.2x2")
-                        Text("More apps by Spencer Hill & The Portland Company")
-                        Image(systemName: "chevron.right")
-                    }
-                }
-                .buttonStyle(.borderless)
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
             }
             .padding(20)
+        }
+        Divider()
+        // Pinned below the scroll view so it's always visible.
+        Link(destination: URL(string: "https://theportlandcompany.com/apps")!) {
+            HStack(spacing: 4) {
+                Image(systemName: "square.grid.2x2")
+                Text("More apps by Spencer Hill & The Portland Company")
+                Image(systemName: "chevron.right")
+            }
+        }
+        .buttonStyle(.borderless)
+        .font(.system(size: 11))
+        .foregroundStyle(.secondary)
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 10)
         }
         .frame(minWidth: 620, minHeight: 480)
         .onAppear {
